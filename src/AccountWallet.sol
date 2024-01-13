@@ -28,20 +28,32 @@ import {Account, IEntryPoint} from "@thirdweb-dev/contracts/prebuilts/account/no
 
 error AccountWallet__InvalidChainId(uint256 chainId);
 error AccountWallet__NotAdminForEntryPoint(address sender);
+error AccountWallet__NotTokenOnwer(address owner);
+error AccountWallet__WrongArrayLength();
+error AccountWallet__NotNftOwner(address sender);
 
 contract AccountWallet is Account {
+    /*///////////////////////////////////////////////////////////////
+                                State
+    //////////////////////////////////////////////////////////////*/
+
     uint256 public s_chainId;
     address private s_tokenContract;
     uint256 private s_tokenId;
 
-    // Modifiers
+    /*///////////////////////////////////////////////////////////////
+                            Modifiers
+    //////////////////////////////////////////////////////////////*/
     modifier onlyOwnerOrEntrypoint() {
         if (msg.sender == address(entryPoint()) || owner() == msg.sender)
             revert AccountWallet__NotAdminForEntryPoint(msg.sender);
         _;
     }
 
-    // Functions
+    /*///////////////////////////////////////////////////////////////
+                            Constructor
+    //////////////////////////////////////////////////////////////*/
+
     constructor(
         IEntryPoint entryPoint,
         address factory
@@ -49,9 +61,54 @@ contract AccountWallet is Account {
         _disableInitializers();
     }
 
-    function isValidSigner(
-        address _signer
-    ) public view override returns (bool) {
+    /*///////////////////////////////////////////////////////////////
+                        External functions
+    //////////////////////////////////////////////////////////////*/
+    function execute(
+        address target,
+        uint256 value,
+        bytes calldata _calldata
+    ) external virtual override onlyOwnerOrEntrypoint {
+        _call(target, value, _calldata);
+    }
+
+    function executeBatch(
+        address[] calldata target,
+        uint256[] calldata value,
+        bytes[] calldata _calldata
+    ) external virtual override onlyOwnerOrEntrypoint {
+        if (target.length == _calldata.length && target.length == value.length)
+            revert AccountWallet__WrongArrayLength();
+
+        for (uint256 i = 0; i < target.length; i++) {
+            _call(target[i], value[i], _calldata[i]);
+        }
+    }
+
+    /*function withdrawDepositTo(
+        address payable withdrawAddress,
+        uint256 amount
+    ) public virtual override {
+        if (owner() == msg.sender)
+            revert AccountWallet__NotNftOwner(msg.sender);
+        entryPoint().withdrawTo(withdrawAddress, amount);
+    }*/
+
+    /*///////////////////////////////////////////////////////////////
+                            View functions
+    //////////////////////////////////////////////////////////////*/
+
+    function initialize(
+        address admin,
+        bytes calldata data
+    ) public override initializer {
+        if (owner() != admin) revert AccountWallet__NotTokenOnwer(admin);
+        (s_chainId, s_tokenContract, s_tokenId) = abi.decode(
+            data,
+            (uint256, address, uint256)
+        );
+    }
+    function isValidSigner(address _signer) public view returns (bool) {
         return (owner() == _signer);
     }
 
@@ -71,5 +128,14 @@ contract AccountWallet is Account {
 
     function getTokenId() public view returns (uint256) {
         return s_tokenId;
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                            Internal functions
+    //////////////////////////////////////////////////////////////*/
+
+    function _onlyAdmin() internal virtual override {
+        if (owner() == msg.sender)
+            revert AccountWallet__NotNftOwner(msg.sender);
     }
 }
