@@ -27,7 +27,6 @@ import {BaseAccountFactory, IEntryPoint} from "@thirdweb-dev/contracts/prebuilts
 import {AccountWallet} from "./AccountWallet.sol";
 
 contract FactoryAccountWallet is BaseAccountFactory {
-    event AccountCreated(address account);
     constructor(
         IEntryPoint _entrypoint
     )
@@ -50,6 +49,5 @@ contract FactoryAccountWallet is BaseAccountFactory {
         bytes calldata data
     ) internal override {
         AccountWallet(payable(account)).initialize(admin, data);
-        emit AccountCreated(account);
     }
 }
