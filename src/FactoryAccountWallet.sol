@@ -36,12 +36,12 @@ contract FactoryAccountWallet is BaseAccountFactory {
         )
     {}
 
-    function _generateSalt(
-        address,
+    /*function _generateSalt(
+        address _admin,
         bytes memory _data
     ) internal view virtual override returns (bytes32) {
-        return keccak256(abi.encode(_data));
-    }
+        return keccak256(abi.encode(_admin, _data));
+    }*/
 
     function _initializeAccount(
         address account,

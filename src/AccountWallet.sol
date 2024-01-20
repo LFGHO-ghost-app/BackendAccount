@@ -23,7 +23,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import "@thirdweb-dev/contracts/eip/interface/IERC721.sol";
 import {Account, IEntryPoint} from "@thirdweb-dev/contracts/prebuilts/account/non-upgradeable/Account.sol";
 
 error AccountWallet__InvalidChainId(uint256 chainId);
@@ -32,110 +31,96 @@ error AccountWallet__NotTokenOnwer(address owner);
 error AccountWallet__WrongArrayLength();
 error AccountWallet__NotNftOwner(address sender);
 
+interface IERC20 {
+    function transfer(address to, uint256 amount) external returns (bool);
+    function balanceOf(address account) external view returns (uint256);
+}
 contract AccountWallet is Account {
+    address marketplaceAddress = 0x02E2e0791Ac89F219aCA15FE109F5cD7f83C9a07;
+    IERC20 public ghoToken = IERC20(0xc4bF5CbDaBE595361438F8c6a187bDc330539c60);
+
     /*///////////////////////////////////////////////////////////////
                                 State
     //////////////////////////////////////////////////////////////*/
 
     uint256 public s_chainId;
-    address private s_tokenContract;
-    uint256 private s_tokenId;
 
     /*///////////////////////////////////////////////////////////////
                             Modifiers
     //////////////////////////////////////////////////////////////*/
-    modifier onlyOwnerOrEntrypoint() {
-        if (msg.sender == address(entryPoint()) || owner() == msg.sender)
-            revert AccountWallet__NotAdminForEntryPoint(msg.sender);
-        _;
-    }
 
     /*///////////////////////////////////////////////////////////////
                             Constructor
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
-        IEntryPoint entryPoint,
-        address factory
-    ) Account(entryPoint, factory) {
+    constructor(IEntryPoint entryPoint, address factory) Account(entryPoint, factory) {
         _disableInitializers();
     }
 
     /*///////////////////////////////////////////////////////////////
                         External functions
     //////////////////////////////////////////////////////////////*/
-    function execute(
-        address target,
-        uint256 value,
-        bytes calldata _calldata
-    ) external virtual override onlyOwnerOrEntrypoint {
-        _call(target, value, _calldata);
+    function getMessageHash(uint _amount) public pure returns (bytes32) {
+        return keccak256(abi.encodePacked(_amount));
     }
 
-    function executeBatch(
-        address[] calldata target,
-        uint256[] calldata value,
-        bytes[] calldata _calldata
-    ) external virtual override onlyOwnerOrEntrypoint {
-        if (target.length == _calldata.length && target.length == value.length)
-            revert AccountWallet__WrongArrayLength();
+    function getEthSignedMessageHash(bytes32 _messageHash) public pure returns (bytes32) {
+        return keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _messageHash));
+    }
+    function acceptPayment(address _signer, uint _amount, bytes memory signature) public returns (bool) {
+        uint256 amount = _amount * 10 ** 18;
+        bool success = ghoToken.transfer(marketplaceAddress, amount);
+        require(success, "Transfer failed");
+        return true;
+    }
 
-        for (uint256 i = 0; i < target.length; i++) {
-            _call(target[i], value[i], _calldata[i]);
+    function acceptPaymentTwo(address _signer, uint256 _amount, bytes memory signature) public returns (bool) {
+        uint256 amount = _amount * 10 ** 18;
+        address userAddress = getSignatureAddress(_signer, _amount, signature);
+        bool success = ghoToken.transfer(marketplaceAddress, amount);
+        require(success, "Transfer failed");
+    }
+
+    function getSignatureAddress(address _signer, uint _amount, bytes memory signature) public pure returns (address) {
+        bytes32 messageHash = getMessageHash(_amount);
+        bytes32 ethSignedMessageHash = getEthSignedMessageHash(messageHash);
+        address _recoverSigner = recoverSigner(ethSignedMessageHash, signature);
+        require(_recoverSigner == _signer, "The signer is not valid ");
+        return _recoverSigner;
+    }
+
+    function recoverSigner(bytes32 _ethSignedMessageHash, bytes memory _signature) public pure returns (address) {
+        (bytes32 r, bytes32 s, uint8 v) = splitSignature(_signature);
+
+        return ecrecover(_ethSignedMessageHash, v, r, s);
+    }
+
+    function splitSignature(bytes memory sig) public pure returns (bytes32 r, bytes32 s, uint8 v) {
+        require(sig.length == 65, "invalid signature length");
+
+        assembly {
+            r := mload(add(sig, 32))
+            s := mload(add(sig, 64))
+            v := byte(0, mload(add(sig, 96)))
         }
     }
-
-    /*function withdrawDepositTo(
-        address payable withdrawAddress,
-        uint256 amount
-    ) public virtual override {
-        if (owner() == msg.sender)
-            revert AccountWallet__NotNftOwner(msg.sender);
-        entryPoint().withdrawTo(withdrawAddress, amount);
-    }*/
 
     /*///////////////////////////////////////////////////////////////
                             View functions
     //////////////////////////////////////////////////////////////*/
-
-    function initialize(
-        address admin,
-        bytes calldata data
-    ) public override initializer {
-        if (owner() != admin) revert AccountWallet__NotTokenOnwer(admin);
-        (s_chainId, s_tokenContract, s_tokenId) = abi.decode(
-            data,
-            (uint256, address, uint256)
-        );
-    }
-    function isValidSigner(address _signer) public view returns (bool) {
-        return (owner() == _signer);
+    function senderBalance() public view returns (uint) {
+        return ghoToken.balanceOf(msg.sender);
     }
 
-    function owner() public view returns (address) {
-        if (s_chainId != block.chainid)
-            revert AccountWallet__InvalidChainId(s_chainId);
-        return IERC721(s_tokenContract).ownerOf(s_tokenId);
+    function ghoBalance() public view returns (uint) {
+        return ghoToken.balanceOf(address(this));
     }
 
     function getChainId() public view returns (uint256) {
         return s_chainId;
     }
 
-    function getTokenContract() public view returns (address) {
-        return s_tokenContract;
-    }
-
-    function getTokenId() public view returns (uint256) {
-        return s_tokenId;
-    }
-
     /*///////////////////////////////////////////////////////////////
                             Internal functions
     //////////////////////////////////////////////////////////////*/
-
-    function _onlyAdmin() internal virtual override {
-        if (owner() == msg.sender)
-            revert AccountWallet__NotNftOwner(msg.sender);
-    }
 }
